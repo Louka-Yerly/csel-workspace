@@ -1,0 +1,25 @@
+#!/bin/sh
+#
+# Daemon application
+#
+case "$1" in
+  start)
+  	mount /dev/mmcblk2p3 /opt/
+	/opt/mini-program
+	;;
+  stop)
+  	killall mini-program
+	;;
+  restart|reload)
+  	killall mini-program
+	/opt/mini-program
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|restart}"
+	exit 1
+esac
+
+echo "Daemon application launched"
+
+exit $?
+
