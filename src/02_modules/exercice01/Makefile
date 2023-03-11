@@ -15,6 +15,7 @@ CFLAGS_skeleton.o := -DDEBUG
 else
 include ../../kernel_settings
 PWD := $(shell pwd)
+MODPATH := /rootfs
 
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) ARCH=$(CPU) CROSS_COMPILE=$(TOOLS) modules
