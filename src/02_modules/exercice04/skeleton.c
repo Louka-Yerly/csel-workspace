@@ -1,64 +1,86 @@
-/* skeleton.c */
-#include <linux/module.h>	/* needed by all modules */
-#include <linux/init.h>		/* needed for macros */
-#include <linux/kernel.h>	/* needed for debugging */
+// skeleton.c
+#include <linux/module.h>	// needed by all modules
+#include <linux/init.h>		// needed for macros
+#include <linux/kernel.h>	// needed for debugging
 
-#include <linux/moduleparam.h>	/* needed for module parameters */
+#include <linux/moduleparam.h>	// needed for module parameters
 
-#include <linux/slab.h>		/* needed for dynamic memory allocation */
-#include <linux/list.h>		/* needed for linked list processing */
-#include <linux/string.h>	/* needed for string handling */
+#include <linux/slab.h>
+#include <linux/list.h>
 
 static char* text = "dummy text";
-module_param(text, charp, 0);
-static int  elements = 0;
+module_param(text, charp, 0664);
+static int  elements = 1;
 module_param(elements, int, 0);
 
 struct element {
-	char text[100];
-	int ele_nr;
-	struct list_head node;
+    struct list_head list;
+    int unique_id;
+    char text[100];
 };
 
 static LIST_HEAD (my_list);
 
+static void print_elements(void) {
+    struct element* ele;
+    // iterate over the whole list
+    list_for_each_entry(ele, &my_list, list) { 
+        pr_info("  ->Element %i, text: %s\n", ele->unique_id, ele->text);
+    }
+}
+
+void alloc_ele(int unique_id, char* text) {
+    // create a new element
+    struct element* ele = kzalloc(sizeof(*ele), GFP_KERNEL);
+    if (ele != NULL) {
+        ele->unique_id = unique_id;
+        strncpy (ele->text, text, 99); 
+        // add element at the end of the list 
+        list_add_tail(&ele->list, &my_list);
+    } else {
+        pr_err("Memory cannot be allocated\n");
+    }
+}
+
 static int __init skeleton_init(void)
 {
-	int i;
-	pr_info ("Linux module 04 skeleton loaded\n");
-	pr_info ("  text: %s\n  elements: %d\n", text, elements);
-	for (i = 0; i < elements; i++) {
-		struct element* ele = kzalloc (sizeof(*ele), GFP_KERNEL);
-		if (ele != 0) {
-			strncpy (ele->text, text, 99);
-			ele->ele_nr = i;
-			list_add_tail (&ele->node, &my_list);
-		}
+    int i=0;
+
+    pr_info ("Linux module 01 skeleton loaded\n");
+    pr_debug ("  text: %s\n  elements: %d\n", text, elements);
+    
+    for(; i<elements; i++) {
+        alloc_ele(i, text);
+    }
+
+    print_elements();
+
+    return 0;
+}
+
+static void free_list(void) {
+    struct element* ele;
+	struct list_head *p, *n;
+    
+    // reference: https://stackoverflow.com/questions/63051548/linux-kernel-list-freeing-memory
+	list_for_each_safe(p, n, &my_list) {
+		ele = list_entry(p, struct element, list);
+        pr_info("  ->Element %i freed", ele->unique_id);
+        kfree(ele);
 	}
-	return 0;
+    
 }
 
 static void __exit skeleton_exit(void)
 {
-	struct element* ele;
-	int nb_eles = 0;
-	list_for_each_entry (ele, &my_list, node) {
-		pr_info ("ele [%d/%d/%d] = %s\n", nb_eles, ele->ele_nr, elements, ele->text); 
-		nb_eles++;
-	}
-	while (!list_empty (&my_list)) {
-		ele = list_entry (my_list.next, struct element, node);
-		list_del (&ele->node);
-		kfree (ele);
-	}
-	pr_info ("All elements (%d/%d) of the list have been removed and deleted!\n", nb_eles, elements);
-	pr_info ("Linux module skeleton unloaded\n");
+    free_list();
+    pr_info ("Linux module skeleton unloaded\n");
 }
 
 module_init (skeleton_init);
 module_exit (skeleton_exit);
 
-MODULE_AUTHOR ("Daniel Gachet <daniel.gachet@hefr.ch>");
+MODULE_AUTHOR ("Srdjenovic Luca & Yerly Louka");
 MODULE_DESCRIPTION ("Module skeleton");
 MODULE_LICENSE ("GPL");
 

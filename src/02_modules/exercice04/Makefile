@@ -14,6 +14,7 @@ mymodule-objs := skeleton.o	## list of objects needed for that module
 else
 include ../../kernel_settings
 PWD := $(shell pwd)
+MODPATH := /rootfs
 
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) ARCH=$(CPU) CROSS_COMPILE=$(TOOLS) modules
