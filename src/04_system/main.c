@@ -17,7 +17,7 @@
  *
  * Abstract: System programming -  file system
  *
- * Purpose: NanoPi silly status led control system
+ * Purpose: NanoPi status led control system
  *
  * Author:  Louka Yerly
  * Date:    21.04.2023
