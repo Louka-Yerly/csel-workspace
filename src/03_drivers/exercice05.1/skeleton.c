@@ -11,9 +11,9 @@
 #include <linux/miscdevice.h>
 #include <linux/platform_device.h> /* needed for sysfs handling */
 
-//#define MISC
+#define MISC
 //#define PLATFORM
-#define CLASS
+//#define CLASS
 
 struct skeleton_config {
     int id;
@@ -153,7 +153,7 @@ static struct file_operations skeleton_fops = {
 #ifdef MISC
 static struct miscdevice misc_device = {
     .minor = MISC_DYNAMIC_MINOR,
-    .fops  = &fops
+    .fops  = &skeleton_fops,
     .name  = "my_misc_module",
     .mode  = 0,
 };

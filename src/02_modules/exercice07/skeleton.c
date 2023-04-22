@@ -11,7 +11,7 @@
 static struct task_struct* my_thread[2];
 
 DECLARE_WAIT_QUEUE_HEAD (queue_1);
-static atomic_t is_kicked;
+static q is_kicked;
 
 static int skeleton_thread_1 (void* data)
 {
@@ -25,7 +25,7 @@ static int skeleton_thread_1 (void* data)
 			break;
 		}
 		atomic_dec (&is_kicked);
-		pr_info ("skeleton thread_1 has been kicked\n");
+		pr_info ("skeletdafon thread_1 has been kicked\n");
 	}
 	return 0;
 }

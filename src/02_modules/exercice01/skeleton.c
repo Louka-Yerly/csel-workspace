@@ -60,14 +60,14 @@ static int __init skeleton_init(void)
 
 static void free_list(void) {
     struct element* ele;
-	struct list_head *p, *n;
+    struct list_head *p, *n;
     
     // reference: https://stackoverflow.com/questions/63051548/linux-kernel-list-freeing-memory
-	list_for_each_safe(p, n, &my_list) {
-		ele = list_entry(p, struct element, list);
+    list_for_each_safe(p, n, &my_list) {
+        ele = list_entry(p, struct element, list);
         pr_info("  ->Element %i freed", ele->unique_id);
         kfree(ele);
-	}
+    }
     
 }
 

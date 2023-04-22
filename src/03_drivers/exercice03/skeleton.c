@@ -57,7 +57,7 @@ static ssize_t skeleton_read(struct file* f,
     *off += count;
 
     // copy required number of bytes
-    if (copy_to_user(buf, ptr, count) != 0) count = -EFAULT;
+    if (copy_to_user(buf, man , count) != 0) count = -EFAULT;
 
     pr_info("skeleton: read operation... read=%ld\n", count);
 
