@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 University of Applied Sciences Western Switzerland / Fribourg
+ * Copyright 2023 University of Applied Sciences Western Switzerland / Fribourg
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,43 +19,40 @@
  *
  * Purpose: NanoPi status led control system
  *
- * Author:  Louka Yerly
- * Date:    21.04.2023
+ * Author:  Luca Srdjenovic & Louka Yerly
+ * Date:    28.04.2023
  */
-
 
 #include <errno.h>
 #include <fcntl.h>
-#include <stdlib.h>
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/stat.h>
+#include <sys/timerfd.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
-#include <stdbool.h>
-#include <signal.h>
-#include <sys/timerfd.h>
-#include <sys/epoll.h>
-
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
 
 //-----------------------------------------------------------------------------
-struct ctrl
-{
+struct ctrl {
     int fd;                         // fd of the /value
     struct epoll_event event;       // epoll event
-    void (*process)(struct ctrl *); // pointer to the function
+    void (*process)(struct ctrl*);  // pointer to the function
 };
 
 // GPIO CONFIG
 //-----------------------------------------------------------------------------
-#define GPIO_EXPORT   "/sys/class/gpio/export"
+#define GPIO_EXPORT "/sys/class/gpio/export"
 #define GPIO_UNEXPORT "/sys/class/gpio/unexport"
-#define GPIO_GPIO     "/sys/class/gpio/gpio"
+#define GPIO_GPIO "/sys/class/gpio/gpio"
 
-static inline const char *gpio_name(const char *nr, const char *attr)
+static inline const char* gpio_name(const char* nr, const char* attr)
 {
     static char buf[100];
     memset(buf, 0, sizeof(buf));
@@ -67,12 +64,12 @@ static inline const char *gpio_name(const char *nr, const char *attr)
     return buf;
 }
 
-static void cfg_gpio_export(const char* nr) {
+static void cfg_gpio_export(const char* nr)
+{
     int fd = -1;
 
     // unexport pin out of sysfs (reinitialization)
-    if (access(gpio_name(nr, ""), F_OK) != -1)
-    {
+    if (access(gpio_name(nr, ""), F_OK) != -1) {
         fd = open(GPIO_UNEXPORT, O_WRONLY);
         write(fd, nr, strlen(nr));
         close(fd);
@@ -80,8 +77,7 @@ static void cfg_gpio_export(const char* nr) {
 
     // export pin to sysfs
     fd = open(GPIO_EXPORT, O_WRONLY);
-    if (fd == -1)
-    {
+    if (fd == -1) {
         char msg[100] = "";
         snprintf(msg, sizeof(msg) - 1, "ERROR : can't export gpio -> %s", nr);
         perror(msg);
@@ -91,10 +87,9 @@ static void cfg_gpio_export(const char* nr) {
     close(fd);
 }
 
-
-static int cfg_gpio_in(const char *nr, const char *edge)
+static int cfg_gpio_in(const char* nr, const char* edge)
 {
-    cfg_gpio_export(nr);    
+    cfg_gpio_export(nr);
 
     // config pin
     int fd = open(gpio_name(nr, "/direction"), O_WRONLY);
@@ -107,14 +102,14 @@ static int cfg_gpio_in(const char *nr, const char *edge)
 
     fd = open(gpio_name(nr, "/value"), O_RDWR);
 
-    // dummy read to acknowledge dummy event
+    // ack pending event
     char dummy[10];
     pread(fd, dummy, sizeof(dummy), 0);
 
     return fd;
 }
 
-static int cfg_gpio_out(const char *nr, bool val)
+static int cfg_gpio_out(const char* nr, bool val)
 {
     cfg_gpio_export(nr);
 
@@ -129,31 +124,30 @@ static int cfg_gpio_out(const char *nr, bool val)
     return fdo;
 }
 
-
 // LED
 //-----------------------------------------------------------------------------
 #define LED_GPIO_NR "10"
 
-static void set_led(int led_fd, bool mode) {
-    pwrite(led_fd, mode? "1" : "0", 2, 0);
+static void set_led(int led_fd, bool mode)
+{
+    pwrite(led_fd, mode ? "1" : "0", 2, 0);
 }
 
-static void toggle_led(int led_fd) {
+static void toggle_led(int led_fd)
+{
     char buf[100] = {0};
     pread(led_fd, buf, sizeof(buf), 0);
     set_led(led_fd, !(buf[0] == '1'));
 }
 
-
-
 // TIMER
 //-----------------------------------------------------------------------------
 enum timer_type {
-    TIMER_PERIOD,
+    TIMER_LED_BLINK                 = 0,
+    TIMER_PERIOD_LED_BUTTON_PRESSED = 1,
 };
 
-struct timer_ctrl
-{
+struct timer_ctrl {
     struct ctrl ctrl;
     int64_t default_period_ms;
     int64_t actual_period_ms;
@@ -161,68 +155,110 @@ struct timer_ctrl
     void* arg;
 };
 
-static void timer_process(struct ctrl *ctrl)
-{
-    struct timer_ctrl *timer = (struct timer_ctrl *)ctrl;
+static void timer_led_slowdown();
+static void timer_led_speedup();
 
+static void timer_process(struct ctrl* ctrl)
+{
+    struct timer_ctrl* timer = (struct timer_ctrl*)ctrl;
     uint64_t temp;
     int ret = read(timer->ctrl.fd, &temp, sizeof(temp));
-    if (ret == -1 && errno != 0)
-    {
+    if (ret == -1 && errno != 0) {
         perror("Error in timer_process");
     }
 
-    switch (timer->type)
-    {
-        case TIMER_PERIOD:
-            toggle_led((int)timer->arg);
+    bool speed_up = false;
+    if (timer->type == TIMER_PERIOD_LED_BUTTON_PRESSED) {
+        speed_up = (bool)timer->arg;
+    }
+
+    switch (timer->type) {
+        case TIMER_LED_BLINK:
+            // double casting cause pointer is 64 bits and int is 32 bits
+            toggle_led((int)(int64_t)timer->arg);
             break;
-        
+        case TIMER_PERIOD_LED_BUTTON_PRESSED:
+            if (speed_up) {
+                timer_led_speedup();
+            } else {
+                timer_led_slowdown();
+            }
+            break;
         default:
             break;
     }
-
 }
-
+// multiple of 2 to divide and mulitply and always have the same value
+#define TIMER_LED_BLINK_DEFAULT_PERIOD 2048
+#define TIMER_PERIOD_LED_BUTTON_PRESSED_DEFAULT_PERIOD 1000
 static struct timer_ctrl timers[] = {
-    [0] = {
-        .ctrl = {
-            .fd = -1,
-            .event = {.events = EPOLLIN, .data.ptr = &timers[0].ctrl, },
-            .process = timer_process,
+    [0] =
+        {
+            .ctrl =
+                {
+                    .fd = -1,
+                    .event =
+                        {
+                            .events   = EPOLLIN,
+                            .data.ptr = &timers[0].ctrl,
+                        },
+                    .process = timer_process,
+                },
+            .actual_period_ms  = 0,
+            .default_period_ms = TIMER_LED_BLINK_DEFAULT_PERIOD,
+            .type              = TIMER_LED_BLINK,
+            .arg               = NULL,
         },
-        .default_period_ms = 0,
-        .type = TIMER_PERIOD,
-        .arg = NULL,
-    },
-};
+    [1] = {
+        .ctrl =
+            {
+                .fd = -1,
+                .event =
+                    {
+                        .events   = EPOLLIN,
+                        .data.ptr = &timers[1].ctrl,
+                    },
+                .process = timer_process,
+            },
+        .actual_period_ms  = 0,
+        .default_period_ms = TIMER_PERIOD_LED_BUTTON_PRESSED_DEFAULT_PERIOD,
+        .type              = TIMER_PERIOD_LED_BUTTON_PRESSED,
+        .arg               = (void*)false,
+    }};
 
-static void timer_set_period(unsigned int timer_index, int64_t period_ms) {
+static void timer_set_period(enum timer_type timer_index, int64_t period_ms)
+{
     timers[timer_index].actual_period_ms = period_ms;
-    
+
     struct itimerspec timer_spec = {
-        .it_interval = {
-            .tv_sec = period_ms / 1000,
-            .tv_nsec = (period_ms % 1000) * 1000000,
-        },
-        .it_value = {
-            .tv_sec = period_ms / 1000,
-            .tv_nsec = (period_ms % 1000) * 1000000,
-        },
+        .it_interval =
+            {
+                .tv_sec  = period_ms / 1000,
+                .tv_nsec = (period_ms % 1000) * 1000000,
+            },
+        .it_value =
+            {
+                .tv_sec  = period_ms / 1000,
+                .tv_nsec = (period_ms % 1000) * 1000000,
+            },
     };
 
-    timerfd_settime(timers[timer_index].ctrl.fd, 0, &timer_spec, 0);
+    int ret = timerfd_settime(timers[timer_index].ctrl.fd, 0, &timer_spec, 0);
+    if (ret < 0) {
+        perror("Cannot set timer period");
+    }
+
+    if (timer_index == TIMER_LED_BLINK)
+        printf("LED period %li ms\n", period_ms);
 }
 
-static void timer_setup(int efd, int64_t* periods_ms, void* *args)
+static void timers_setup(int efd, int64_t* periods_ms, void** args)
 {
-    for (unsigned int i = 0; i < ARRAY_SIZE(timers); i++)
-    {
+    for (unsigned int i = 0; i < ARRAY_SIZE(timers); i++) {
         timers[i].arg = args[i];
 
         timers[i].ctrl.fd = timerfd_create(CLOCK_MONOTONIC, 0);
-        if (timers[i].ctrl.fd == -1)
-        {
+        if (timers[i].ctrl.fd == -1) {
             perror("timerfd == -1 --> error");
             exit(EXIT_FAILURE);
         }
@@ -234,18 +270,31 @@ static void timer_setup(int efd, int64_t* periods_ms, void* *args)
     }
 }
 
-
-static void timer_led_speedup() {
-    timer_set_period(0, timers[0].actual_period_ms/2);
-}
-static void timer_led_slowdown() {
-    
-    timer_set_period(0, timers[0].actual_period_ms*2);
-}
-static void timer_led_reset() {
-    timer_set_period(0, timers[0].default_period_ms);
+static void timers_close(int efd)
+{
+    for (unsigned int i = 0; i < ARRAY_SIZE(timers); i++) {
+        epoll_ctl(efd, EPOLL_CTL_DEL, timers[i].ctrl.fd, &timers[i].ctrl.event);
+        close(timers[i].ctrl.fd);
+    }
 }
 
+static void timer_led_speedup()
+{
+    int64_t period_ms = timers[TIMER_LED_BLINK].actual_period_ms / 2;
+    period_ms         = period_ms > 0 ? period_ms : 1;
+    if (period_ms == 1) printf("Minimal frequency\n");
+    timer_set_period(TIMER_LED_BLINK, period_ms);
+}
+static void timer_led_slowdown()
+{
+    timer_set_period(TIMER_LED_BLINK,
+                     timers[TIMER_LED_BLINK].actual_period_ms * 2);
+}
+static void timer_led_reset()
+{
+    timer_set_period(TIMER_LED_BLINK,
+                     timers[TIMER_LED_BLINK].default_period_ms);
+}
 
 // BUTTON
 //-----------------------------------------------------------------------------
@@ -255,33 +304,55 @@ enum button_type {
     BUTTON_RIGHT,
 };
 
-struct button_ctrl
-{
+enum button_state {
+    BUTTON_PRESSED  = 0,
+    BUTTON_RELEASED = 1,
+};
+
+struct button_ctrl {
     struct ctrl ctrl;
-    const char *gpio_nr;
-    const char *edge;
+    const char* gpio_nr;
+    const char* edge;
     const enum button_type type;
 };
 
-void button_process(struct ctrl *ctrl) {
-    struct button_ctrl *btn = (struct button_ctrl *)ctrl;
+void button_process(struct ctrl* ctrl)
+{
+    struct button_ctrl* btn = (struct button_ctrl*)ctrl;
     char buf[10];
     ssize_t n = pread(btn->ctrl.fd, buf, sizeof(buf), 0);
-    if (n == -1 && errno != 0)
-    {
+    if (n == -1 && errno != 0) {
         perror("Error while reading button state");
     }
 
-    switch (btn->type)
-    {
+    enum button_state state = buf[0] == '0' ? BUTTON_RELEASED : BUTTON_PRESSED;
+
+    switch (btn->type) {
         case BUTTON_LEFT:
-            timer_led_speedup();
+            if (state == BUTTON_PRESSED) {
+                timer_led_speedup();
+                timer_set_period(
+                    TIMER_PERIOD_LED_BUTTON_PRESSED,
+                    TIMER_PERIOD_LED_BUTTON_PRESSED_DEFAULT_PERIOD);
+                timers[TIMER_PERIOD_LED_BUTTON_PRESSED].arg = (void*)true;
+            } else {
+                timer_set_period(TIMER_PERIOD_LED_BUTTON_PRESSED, 0);
+            }
             break;
         case BUTTON_CENTER:
             timer_led_reset();
             break;
         case BUTTON_RIGHT:
-            timer_led_slowdown();
+
+            if (state == BUTTON_PRESSED) {
+                timer_led_slowdown();
+                timer_set_period(
+                    TIMER_PERIOD_LED_BUTTON_PRESSED,
+                    TIMER_PERIOD_LED_BUTTON_PRESSED_DEFAULT_PERIOD);
+                timers[TIMER_PERIOD_LED_BUTTON_PRESSED].arg = (void*)false;
+            } else {
+                timer_set_period(TIMER_PERIOD_LED_BUTTON_PRESSED, 0);
+            }
             break;
         default:
             break;
@@ -289,49 +360,66 @@ void button_process(struct ctrl *ctrl) {
 }
 
 struct button_ctrl buttons[] = {
-    [0] = {
-        .gpio_nr = "0",
-        .edge = "falling",
-        .type = BUTTON_LEFT,
-        .ctrl = {
-            .fd = -1,
-            .event = {.events = EPOLLERR | EPOLLET, .data.ptr = &buttons[0].ctrl},
-            .process = button_process,
+    [0] =
+        {
+            .gpio_nr = "0",
+            .edge    = "both",
+            .type    = BUTTON_LEFT,
+            .ctrl =
+                {
+                    .fd      = -1,
+                    .event   = {.events   = EPOLLERR | EPOLLET,
+                                .data.ptr = &buttons[0].ctrl},
+                    .process = button_process,
+                },
         },
-    },
-    [1] = {
-        .gpio_nr = "2",
-        .edge = "falling",
-        .type = BUTTON_CENTER,
-        .ctrl = {
-            .fd = -1,
-            .event = {.events = EPOLLERR | EPOLLET, .data.ptr = &buttons[1].ctrl},
-            .process = button_process,
+    [1] =
+        {
+            .gpio_nr = "2",
+            .edge    = "falling",
+            .type    = BUTTON_CENTER,
+            .ctrl =
+                {
+                    .fd      = -1,
+                    .event   = {.events   = EPOLLERR | EPOLLET,
+                                .data.ptr = &buttons[1].ctrl},
+                    .process = button_process,
+                },
         },
-    },
-    [2] = {
-        .gpio_nr = "3",
-        .edge = "falling",
-        .type = BUTTON_RIGHT,
-        .ctrl = {
-            .fd = -1,
-            .event = {.events = EPOLLERR | EPOLLET, .data.ptr = &buttons[2].ctrl},
-            .process = button_process,
+    [2] =
+        {
+            .gpio_nr = "3",
+            .edge    = "both",
+            .type    = BUTTON_RIGHT,
+            .ctrl =
+                {
+                    .fd      = -1,
+                    .event   = {.events   = EPOLLERR | EPOLLET,
+                                .data.ptr = &buttons[2].ctrl},
+                    .process = button_process,
+                },
         },
-    },
 };
 
 static void buttons_setup(int efd)
 {
-    for (unsigned i = 0; i < ARRAY_SIZE(buttons); i++)
-    {
-        struct button_ctrl *btn = &buttons[i];
+    for (unsigned i = 0; i < ARRAY_SIZE(buttons); i++) {
+        struct button_ctrl* btn = &buttons[i];
 
         // gpio pins configuration
         btn->ctrl.fd = cfg_gpio_in(btn->gpio_nr, btn->edge);
 
         // epoll configuration
         epoll_ctl(efd, EPOLL_CTL_ADD, btn->ctrl.fd, &btn->ctrl.event);
+    }
+}
+
+static void buttons_close(int efd)
+{
+    for (unsigned i = 0; i < ARRAY_SIZE(buttons); i++) {
+        struct button_ctrl* btn = &buttons[i];
+        epoll_ctl(efd, EPOLL_CTL_DEL, btn->ctrl.fd, &btn->ctrl.event);
+        close(btn->ctrl.fd);
     }
 }
 
@@ -348,34 +436,28 @@ static void signal_int_handler(int s)
 static void signal_setup()
 {
     static bool installed_ = false;
-    if (!installed_)
-    {
+    if (!installed_) {
         signal(SIGINT, signal_int_handler);
         signal(SIGILL, signal_int_handler);
         signal(SIGABRT, signal_int_handler);
         signal(SIGFPE, signal_int_handler);
         signal(SIGSEGV, signal_int_handler);
         signal(SIGTERM, signal_int_handler);
-        installed_ = true;
+        installed_     = true;
         signal_running = true;
     }
 }
-static inline bool signal_is_running()
-{
-    return signal_running;
-}
+static inline bool signal_is_running() { return signal_running; }
 //-----------------------------------------------------------------------------
 
-
-int main(int argc, char* argv[]) {
-
+int main(int argc, char* argv[])
+{
     // catch signal
     signal_setup();
 
     // create event poll
     int efd = epoll_create1(0);
-    if (efd == -1)
-    {
+    if (efd == -1) {
         perror("ERROR while create epoll");
         exit(EXIT_FAILURE);
     }
@@ -387,39 +469,33 @@ int main(int argc, char* argv[]) {
     buttons_setup(efd);
 
     // config timer
-    int64_t period = 2000;
+    int64_t period = TIMER_LED_BLINK_DEFAULT_PERIOD;
     if (argc >= 2) period = atoi(argv[1]);
-    int64_t periods[] = {period, };
-    void* args[] = {(void*)led_fd, };
-    timer_setup(efd, periods, args);
-        
+    int64_t periods[] = {period, 0};
+    // double casting cause pointer is 64 bits and int is 32 bits
+    void* args[] = {(void*)(int64_t)led_fd, (void*)NULL};
+    timers_setup(efd, periods, args);
 
-    // monitor events
-    while (signal_is_running())
-    {
+    //  monitor events
+    while (signal_is_running()) {
         struct epoll_event events[2];
         int ret = epoll_wait(efd, events, ARRAY_SIZE(events), -1);
-
-        if (ret == -1)
-        {
-            perror(" --> error...");
-        }
-        else if (ret == 0)
-        {
-            perror(" --> nothing received...");
-        }
-        else
-        {
-            for (int i = 0; i < ret; i++)
-            {
-                struct ctrl *ctrl = events[i].data.ptr;
+        if (ret == -1) {
+            perror("Error in epoll_wait");
+        } else if (ret == 0) {
+            perror("Error, nothing receive in epoll_wait");
+        } else {
+            for (int i = 0; i < ret; i++) {
+                struct ctrl* ctrl = events[i].data.ptr;
                 ctrl->process(ctrl);
             }
         }
     }
 
-    // TODO: add the close functions
-
+    buttons_close(efd);
+    timers_close(efd);
+    close(led_fd);
+    close(efd);
 
     return EXIT_SUCCESS;
 }
