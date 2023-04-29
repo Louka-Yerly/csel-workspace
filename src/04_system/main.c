@@ -457,6 +457,7 @@ int main(int argc, char* argv[])
 
     // create event poll
     int efd = epoll_create1(0);
+
     if (efd == -1) {
         perror("ERROR while create epoll");
         exit(EXIT_FAILURE);
@@ -465,12 +466,33 @@ int main(int argc, char* argv[])
     // open led
     int led_fd = cfg_gpio_out(LED_GPIO_NR, false);
 
+    if (led_fd == -1) {
+        perror("ERROR while open led");
+        exit(EXIT_FAILURE);
+    }
+
     // config button
     buttons_setup(efd);
 
     // config timer
     int64_t period = TIMER_LED_BLINK_DEFAULT_PERIOD;
-    if (argc >= 2) period = atoi(argv[1]);
+    if (argc >= 2) {
+        char* endptr;          // used to check for conversion errors
+        errno            = 0;  // set to 0 to detect errors
+        long temp_period = strtol(argv[1], &endptr, 10);
+        if (errno != 0 || *endptr != '\0') {
+            printf("Error: Invalid argument provided.\n");
+            exit(EXIT_FAILURE);
+        } else {
+            // check if period is a power of 2
+            if ((temp_period & (temp_period - 1)) != 0) {
+                printf("Error: Period must be a power of 2.\n");
+                exit(EXIT_FAILURE);
+            }
+            period = temp_period;
+        }
+    }
+
     int64_t periods[] = {period, 0};
     // double casting cause pointer is 64 bits and int is 32 bits
     void* args[] = {(void*)(int64_t)led_fd, (void*)NULL};
