@@ -34,6 +34,7 @@
 #include <sys/stat.h>
 #include <sys/timerfd.h>
 #include <sys/types.h>
+#include <syslog.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -188,9 +189,9 @@ static void timer_process(struct ctrl* ctrl)
             break;
     }
 }
-// multiple of 2 to divide and mulitply and always have the same value
-#define TIMER_LED_BLINK_DEFAULT_PERIOD 2048
-#define TIMER_PERIOD_LED_BUTTON_PRESSED_DEFAULT_PERIOD 1000
+// power of 2 to divide and mulitply and always have the same value
+#define TIMER_LED_BLINK_DEFAULT_PERIOD 512                   // ~2Hz
+#define TIMER_PERIOD_LED_BUTTON_PRESSED_DEFAULT_PERIOD 1000  // 1 Hz
 static struct timer_ctrl timers[] = {
     [0] =
         {
@@ -249,7 +250,7 @@ static void timer_set_period(enum timer_type timer_index, int64_t period_ms)
     }
 
     if (timer_index == TIMER_LED_BLINK)
-        printf("LED period %li ms\n", period_ms);
+        syslog(LOG_INFO, "LED period %li ms", period_ms);
 }
 
 static void timers_setup(int efd, int64_t* periods_ms, void** args)
@@ -455,6 +456,10 @@ int main(int argc, char* argv[])
     // catch signal
     signal_setup();
 
+    // open logs
+    openlog("04_system", LOG_PID, LOG_USER);
+    syslog(LOG_INFO, "Starting application");
+
     // create event poll
     int efd = epoll_create1(0);
 
@@ -518,6 +523,9 @@ int main(int argc, char* argv[])
     timers_close(efd);
     close(led_fd);
     close(efd);
+
+    syslog(LOG_INFO, "Exiting application");
+    closelog();
 
     return EXIT_SUCCESS;
 }
