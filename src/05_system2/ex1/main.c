@@ -20,7 +20,7 @@
 
 #define _XOPEN_SOURCE 600
 #define _DEFAULT_SOURCE
-#define _GNU_SOURCE      // necessary for sigabbrev_np()
+#define _GNU_SOURCE  // necessary for sigabbrev_np()
 
 #include <errno.h>
 #include <fcntl.h>
@@ -32,8 +32,8 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
@@ -45,7 +45,6 @@
 #else
 #define SOCK_TYPE SOCK_DGRAM
 #endif
-
 
 static void signal_handler(int s)
 {
@@ -60,7 +59,9 @@ static void signal_setup()
         //  The signals SIGKILL and SIGSTOP cannot be caught, blocked, or
         //  ignored.
 
-        struct sigaction act = { .sa_handler = signal_handler, };
+        struct sigaction act = {
+            .sa_handler = signal_handler,
+        };
 
         sigaction(SIGHUP, &act, NULL);     // 1
         sigaction(SIGINT, &act, NULL);     // 2
@@ -97,14 +98,15 @@ static void signal_setup()
         sigaction(SIGPWR, &act, NULL);     // 30
         sigaction(SIGSYS, &act, NULL);     // 31
 
-        installed_     = true;
+        installed_ = true;
     }
 }
 
-bool is_exit_message(const char* message) {
+bool is_exit_message(const char* message)
+{
     return strcmp(message, EXIT_MESSAGE) == 0;
 }
- 
+
 int main()
 {
     signal_setup();
@@ -112,7 +114,7 @@ int main()
     int fd[2];
 
     int sock_type = SOCK_TYPE;
-    int err = socketpair(AF_UNIX, sock_type, 0, fd);
+    int err       = socketpair(AF_UNIX, sock_type, 0, fd);
     if (err == -1) {
         perror("Error while opening socket");
         exit(EXIT_FAILURE);
@@ -125,27 +127,24 @@ int main()
         close(fd[1]);
         int fd_child = fd[0];
 
-        char* msg[] = {
-            "hello",
-            "from",
-            "child"
-        };
+        char* msg[] = {"hello", "from", "child"};
 
         for (unsigned int i = 0; i < ARRAY_SIZE(msg); i++) {
             write(fd_child, msg[i], strlen(msg[i]));
-            
-            // write a token for the STREAM type to separate messages (without the \0)
-            if(sock_type == SOCK_STREAM) write(fd_child, TOKEN, sizeof(TOKEN)-1);
-        }
 
+            // write a token for the STREAM type to separate messages (without
+            // the \0)
+            if (sock_type == SOCK_STREAM)
+                write(fd_child, TOKEN, sizeof(TOKEN) - 1);
+        }
 
         // wait a little bit to test the catch signal
         const int waiting_time_sec = 20;
-        int remaining = waiting_time_sec;
-        while(remaining  > 0) {
-            remaining -= waiting_time_sec-sleep(remaining);
+        int remaining              = waiting_time_sec;
+        while (remaining > 0) {
+            remaining -= waiting_time_sec - sleep(remaining);
         }
-        
+
         // exit application
         write(fd_child, EXIT_MESSAGE, sizeof(EXIT_MESSAGE));
 
@@ -160,28 +159,28 @@ int main()
         bool running = true;
         while (running) {
             char buff[200] = {0};
-            ssize_t len    = read(fd_parent, buff, sizeof(buff)-1);
-            
+            ssize_t len    = read(fd_parent, buff, sizeof(buff) - 1);
+
             if (len <= 0) {
                 perror("Cannot receive data from the socket");
                 continue;
             }
-            
-            if(sock_type == SOCK_STREAM) {
+
+            if (sock_type == SOCK_STREAM) {
                 // use the token to separate messages
                 char* message = strtok(buff, TOKEN);
                 while (message != NULL) {
                     printf("Parent - Receive msg: %s\n", message);
 
-                    if(is_exit_message(message)) {
+                    if (is_exit_message(message)) {
                         running = false;
                         break;
                     }
                     message = strtok(NULL, TOKEN);
                 }
-            } else if(sock_type == SOCK_DGRAM) {
+            } else if (sock_type == SOCK_DGRAM) {
                 printf("Parent - Receive msg: %s\n", buff);
-                if(is_exit_message(buff)) {
+                if (is_exit_message(buff)) {
                     running = false;
                 }
             } else {
@@ -194,7 +193,6 @@ int main()
         wait(&status);
 
     } else {
-        
         // error
         if (errno != 0) {
             perror("Error while forking");
@@ -202,9 +200,6 @@ int main()
         }
         exit(EXIT_FAILURE);
     }
-
-
-
 
     return EXIT_SUCCESS;
 }
