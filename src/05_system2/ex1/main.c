@@ -13,17 +13,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * Project:     HEIA-FR / Embedded Systems 4 Laboratory
+ * Project:     HEIA-FR / CSEL1 Laboratory
  * Author:      Louka Yerly
  * Date:        05.05.2023
  */
 
 #define _XOPEN_SOURCE 600
 #define _DEFAULT_SOURCE
-#define _GNU_SOURCE  // necessary for sigabbrev_np()
+#define _GNU_SOURCE  // necessary for sigabbrev_np() and sched
 
 #include <errno.h>
 #include <fcntl.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -48,7 +49,6 @@
 
 static void signal_handler(int s)
 {
-    (void)s;
     printf("receive SIG%s\n", sigabbrev_np(s));
 }
 
@@ -124,6 +124,14 @@ int main()
 
     if (pid == 0) {
         // child
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET(0, &set);
+        int ret = sched_setaffinity(0, sizeof(set), &set);
+        if (ret == -1) {
+            perror("Cannot set cpu affinity");
+        }
+
         close(fd[1]);
         int fd_child = fd[0];
 
@@ -152,6 +160,13 @@ int main()
 
     } else if (pid > 0) {
         // parent
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET(1, &set);
+        int ret = sched_setaffinity(0, sizeof(set), &set);
+        if (ret == -1) {
+            perror("Cannot set cpu affinity");
+        }
 
         close(fd[0]);
         int fd_parent = fd[1];
