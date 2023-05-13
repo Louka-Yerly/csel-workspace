@@ -17,6 +17,8 @@
 #include <syslog.h>
 #include <unistd.h>
 
+#include "oled.h"
+
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
 
 #define MIN(x,y) (x < y ? x : y)
@@ -41,20 +43,79 @@ struct ctrl {
 #define FAN_DRIVER_MODE "/sys/class/misc/fan_driver/mode"
 
 typedef enum {
+    FAN_DRIVER_ATTRIBUTE_FREQ,
+    FAN_DRIVER_ATTRIBUTE_MODE,
+} fan_driver_attribute_t;
+
+typedef enum {
     FAN_DRIVER_MODE_AUTO,
     FAN_DRIVER_MODE_MANUAL,
 } fan_driver_mode_t;
+
+struct fan_driver_ctrl {
+    struct ctrl ctrl;
+    char* attribute_path;
+    fan_driver_attribute_t attribute;
+};
 
 static const char* fan_driver_mode[] = {
     [FAN_DRIVER_MODE_AUTO] = "auto",
     [FAN_DRIVER_MODE_MANUAL] = "manual",
 };
 
-static int fan_driver_freq_fd = -1;
-static int fan_driver_mode_fd = -1;
+
+static void fan_driver_process(struct ctrl* ctrl) {
+    struct fan_driver_ctrl* fan_drv = (struct fan_driver_ctrl*) ctrl;
+
+    char buf[100] = {0};
+    ssize_t n = pread(fan_drv->ctrl.fd, buf, sizeof(buf)-1, 0);
+    if (n == -1 && errno != 0) {
+        syslog(LOG_ERR, "Error while reading the fan_driver state");
+    }
+
+    
+    if(fan_drv->attribute == FAN_DRIVER_ATTRIBUTE_FREQ) {
+        syslog(LOG_INFO, "freq: %s", buf);
+        oled_set_freq(buf);
+
+    } else if(fan_drv->attribute == FAN_DRIVER_ATTRIBUTE_MODE) {
+        syslog(LOG_INFO, "Mode: %s", buf);
+        oled_set_mode(buf);
+
+    } else {
+        syslog(LOG_ERR, "Error: fan_driver attribute not supported (%i)", fan_drv->attribute);
+    }
+}
+
+
+static struct fan_driver_ctrl fan_driver_attributes[] = {
+    [FAN_DRIVER_ATTRIBUTE_FREQ] = {
+        .ctrl =
+                {
+                    .fd      = -1,
+                    .event   = {.events   = EPOLLERR | EPOLLET | EPOLLPRI,
+                                .data.ptr = &fan_driver_attributes[FAN_DRIVER_ATTRIBUTE_FREQ].ctrl},
+                    .process = fan_driver_process,
+                },
+        .attribute_path = FAN_DRIVER_FREQ,
+        .attribute = FAN_DRIVER_ATTRIBUTE_FREQ,
+    },
+
+    [FAN_DRIVER_ATTRIBUTE_MODE] = {
+        .ctrl =
+                {
+                    .fd      = -1,
+                    .event   = {.events   = EPOLLERR | EPOLLET | EPOLLPRI,
+                                .data.ptr = &fan_driver_attributes[FAN_DRIVER_ATTRIBUTE_MODE].ctrl},
+                    .process = fan_driver_process,
+                },
+        .attribute_path = FAN_DRIVER_MODE,
+        .attribute = FAN_DRIVER_ATTRIBUTE_MODE,
+    },
+};
 
 static void fan_driver_set_mode(fan_driver_mode_t mode) {
-    pwrite(fan_driver_mode_fd, fan_driver_mode[mode], strlen(fan_driver_mode[mode]), 0);
+    pwrite(fan_driver_attributes[FAN_DRIVER_ATTRIBUTE_MODE].ctrl.fd, fan_driver_mode[mode], strlen(fan_driver_mode[mode]), 0);
 }
 
 static fan_driver_mode_t fan_driver_get_mode_from_str(const char* mode) {
@@ -66,14 +127,14 @@ static fan_driver_mode_t fan_driver_get_mode_from_str(const char* mode) {
 }
 static void fan_driver_switch_mode() {
     char buf[100] = {0};
-    pread(fan_driver_mode_fd, buf, sizeof(buf)-1, 0);
+    pread(fan_driver_attributes[FAN_DRIVER_ATTRIBUTE_MODE].ctrl.fd, buf, sizeof(buf)-1, 0);
     fan_driver_mode_t mode = fan_driver_get_mode_from_str(buf);
     fan_driver_set_mode(mode == FAN_DRIVER_MODE_AUTO ? FAN_DRIVER_MODE_MANUAL : FAN_DRIVER_MODE_AUTO);
 }
 
 static int fan_driver_get_freq() {
     char buf[100];
-    pread(fan_driver_freq_fd, buf, sizeof(buf)-1, 0);
+    pread(fan_driver_attributes[FAN_DRIVER_ATTRIBUTE_FREQ].ctrl.fd, buf, sizeof(buf)-1, 0);
     int freq = atoi(buf);
     return freq;
 }
@@ -81,7 +142,7 @@ static int fan_driver_get_freq() {
 static void fan_driver_set_freq(uint8_t freq) {
     char buf[100] = {0};
     snprintf(buf, sizeof(buf)-1, "%u", freq);
-    pwrite(fan_driver_freq_fd, buf, strlen(buf), 0);
+    pwrite(fan_driver_attributes[FAN_DRIVER_ATTRIBUTE_FREQ].ctrl.fd, buf, strlen(buf), 0);
 }
 
 static void fan_driver_speedup_freq() {
@@ -95,26 +156,31 @@ static void fan_driver_slowdown_freq() {
     fan_driver_set_freq(freq <= 0 ? 1 : freq);
 }
 
-static void fan_driver_open() {
-    fan_driver_freq_fd = open(FAN_DRIVER_FREQ, O_RDWR);
-    if (fan_driver_freq_fd == -1) {
-        char msg[100] = "";
-        snprintf(msg, sizeof(msg) - 1, "ERROR: cannot open %s", FAN_DRIVER_FREQ);
-        syslog(LOG_ERR, msg);
-        exit(EXIT_FAILURE);
-    }
-    fan_driver_mode_fd = open(FAN_DRIVER_MODE, O_RDWR);
-    if (fan_driver_mode_fd == -1) {
-        char msg[100] = "";
-        snprintf(msg, sizeof(msg) - 1, "ERROR: cannot open %s", FAN_DRIVER_MODE);
-        syslog(LOG_ERR, msg);
-        exit(EXIT_FAILURE);
+static void fan_driver_setup(int efd) {
+
+    for(unsigned int i=0; i<ARRAY_SIZE(fan_driver_attributes); i++) {
+        struct fan_driver_ctrl* fan = &fan_driver_attributes[i];
+        
+        // open fd
+        fan->ctrl.fd = open(fan->attribute_path, O_RDWR);
+        if (fan->ctrl.fd == -1) {
+            char msg[100] = {0};
+            snprintf(msg, sizeof(msg) - 1, "ERROR: cannot open %s", fan->attribute_path);
+            syslog(LOG_ERR, msg);
+            exit(EXIT_FAILURE);
+        }
+
+        // epoll configuration
+        epoll_ctl(efd, EPOLL_CTL_ADD, fan->ctrl.fd, &fan->ctrl.event);
     }
 }
 
 static void fan_driver_close() {
-    close(fan_driver_freq_fd);
-    close(fan_driver_mode_fd);
+    for(unsigned int i=0; i<ARRAY_SIZE(fan_driver_attributes); i++) {
+        struct fan_driver_ctrl* fan = &fan_driver_attributes[i];
+        
+        close(fan->ctrl.fd);
+    }
 }
 
 
@@ -489,13 +555,17 @@ int main()
     int efd = epoll_create1(0);
 
     // open the fan driver
-    fan_driver_open();
+    fan_driver_setup(efd);
 
     // setup the leds
     leds_setup();
 
     // activate the button
     buttons_setup(efd);
+
+    // activate the screen
+    oled_init();
+    oled_display_all();
 
     //  monitor events
     while (signal_is_running()) {
@@ -513,6 +583,7 @@ int main()
         }
     }
 
+    oled_close();
     buttons_close(efd);
     leds_close();
     fan_driver_close();

@@ -1,5 +1,5 @@
 EXE=fand
-SRCS=$(wildcard *.c) 
+SRCS= fand.c oled.c ssd1306.c
 
 CFLAGS=-Wall -Wextra -g -c -O0 -MD -std=gnu11 
 
