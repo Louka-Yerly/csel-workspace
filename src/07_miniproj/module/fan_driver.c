@@ -1,9 +1,9 @@
 /**
  * Copyright 2023 University of Applied Sciences Western Switzerland / Fribourg
  *
- * Licensed under the GPL
+ * Licensed under GPL
  *
- * Project:     HEIA-FR / Embedded Systems 4 Laboratory
+ * Project:     HEIA-FR / CSEL1 Mini-project
  * Author:      Louka Yerly
  * Date:        10.05.2023
  */
