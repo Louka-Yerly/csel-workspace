@@ -1,5 +1,5 @@
-EXE=fand
-SRCS= fand.c oled.c ssd1306.c
+EXE=fan_ctrl
+SRCS= fan.c
 
 CFLAGS=-Wall -Wextra -g -c -O0 -MD -std=gnu11 -lrt
 
