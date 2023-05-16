@@ -472,7 +472,7 @@ int main(int argc, char* argv[])
     int led_fd = cfg_gpio_out(LED_GPIO_NR, false);
 
     if (led_fd == -1) {
-        perror("ERROR while open led");
+        fprintf(stderr, "ERROR while open led\n");
         exit(EXIT_FAILURE);
     }
 
@@ -486,12 +486,12 @@ int main(int argc, char* argv[])
         errno            = 0;  // set to 0 to detect errors
         long temp_period = strtol(argv[1], &endptr, 10);
         if (errno != 0 || *endptr != '\0') {
-            printf("Error: Invalid argument provided.\n");
+            fprintf(stderr, "Error: Invalid argument provided\n");
             exit(EXIT_FAILURE);
         } else {
             // check if period is a power of 2
             if ((temp_period & (temp_period - 1)) != 0) {
-                printf("Error: Period must be a power of 2.\n");
+                fprintf(stderr, "Error: Period must be a power of 2\n");
                 exit(EXIT_FAILURE);
             }
             period = temp_period;
