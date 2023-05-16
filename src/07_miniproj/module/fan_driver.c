@@ -1,9 +1,9 @@
 /**
  * Copyright 2023 University of Applied Sciences Western Switzerland / Fribourg
  *
- * Licensed under the GPL
+ * Licensed under GPL
  *
- * Project:     HEIA-FR / Embedded Systems 4 Laboratory
+ * Project:     HEIA-FR / CSEL1 Mini-project
  * Author:      Louka Yerly
  * Date:        10.05.2023
  */
@@ -52,6 +52,8 @@ static const char* const fan_driver_mode_str[] = {[FAN_MODE_MANUAL] = "manual",
                                                   [FAN_MODE_ERROR]  = "error"};
 
 typedef struct {
+    struct device* dev;
+
     atomic_t frequency;
     char mode_str[50];
     struct mutex mode_mutex;
@@ -77,6 +79,11 @@ static void fan_timer_frequency_set(fan_driver_data_t* fan_data, int frequency)
                                             // ON and half OFF during one period
     mod_timer(&fan_data->fan_timer, jiffies + period);
 
+    // notify to poll the frequency change
+    if(frequency != atomic_read(&fan_data->frequency)) {
+        sysfs_notify(&fan_data->dev->kobj, NULL, TOSTRING(ATTRIBUTE_FREQ));
+    }
+    
     // change the actual value
     atomic_set(&fan_data->frequency, frequency);
 }
@@ -153,7 +160,7 @@ static void fan_driver_mode_change(fan_driver_data_t* fan_data,
         wake_up_interruptible(&fan_data->queue);
 
     } else if (mode_new == FAN_MODE_MANUAL) {
-        // activate the thread
+        // stop the thread
         atomic_set(&fan_data->running_flag, !THREAD_RUN_FLAG);
         // apply the confiuguration to the timer
         fan_timer_frequency_set(fan_data, atomic_read(&fan_data->frequency));
@@ -161,6 +168,8 @@ static void fan_driver_mode_change(fan_driver_data_t* fan_data,
     } else {
         pr_err("Invalid mode for fan_driver (%i)", mode_new);
     }
+
+    sysfs_notify(&fan_data->dev->kobj, NULL, TOSTRING(ATTRIBUTE_MODE));
 }
 
 ssize_t sysfs_show(struct device* dev, struct device_attribute* attr, char* buf)
@@ -175,7 +184,6 @@ ssize_t sysfs_show(struct device* dev, struct device_attribute* attr, char* buf)
         frequency = atomic_read(&fan_data->frequency);
         sprintf(buf, "%u\n", frequency);
         ret = strlen(buf);
-        pr_info("show: %i\n", frequency);
 
     } else if (strncmp(TOSTRING(ATTRIBUTE_MODE),
                        attr->attr.name,
@@ -311,7 +319,8 @@ static int __init fan_driver_init(void)
     // allocate private data
     fan_data = kmalloc(sizeof(*fan_data), GFP_KERNEL);
     BUG_ON(!fan_data);
-
+    
+    fan_data->dev = misc_device.this_device;
     
     memset(fan_data->mode_str, 0, sizeof(fan_data->mode_str));
     strncpy(fan_data->mode_str,
