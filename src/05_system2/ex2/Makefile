@@ -1,4 +1,4 @@
-EXE=ex1
+EXE=ex2
 SRCS=$(wildcard *.c)
 
 ifeq ($(target),)
