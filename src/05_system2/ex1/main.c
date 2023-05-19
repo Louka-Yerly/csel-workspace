@@ -126,7 +126,7 @@ int main()
         // child
         cpu_set_t set;
         CPU_ZERO(&set);
-        CPU_SET(0, &set);
+        CPU_SET(1, &set);
         int ret = sched_setaffinity(0, sizeof(set), &set);
         if (ret == -1) {
             perror("Cannot set cpu affinity");
@@ -154,15 +154,16 @@ int main()
         }
 
         // exit application
-        write(fd_child, EXIT_MESSAGE, sizeof(EXIT_MESSAGE));
+        write(fd_child, EXIT_MESSAGE, sizeof(EXIT_MESSAGE)-1);
 
         close(fd_child);
 
     } else if (pid > 0) {
+        printf("Child PID: %i\n", pid);
         // parent
         cpu_set_t set;
         CPU_ZERO(&set);
-        CPU_SET(1, &set);
+        CPU_SET(0, &set);
         int ret = sched_setaffinity(0, sizeof(set), &set);
         if (ret == -1) {
             perror("Cannot set cpu affinity");
