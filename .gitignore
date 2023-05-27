@@ -6,6 +6,9 @@ src/*/app
 
 .DS_Store
 
+.vscode/settings.json
+
+src/**/main
 src/**/.Module.*
 src/**/Module.symvers
 src/**/.mymodule.*
