@@ -28,7 +28,6 @@
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 
-// TODO: enlever tout les perror...
 
 //-----------------------------------------------------------------------------
 struct ctrl {
@@ -84,8 +83,8 @@ static struct temperature_ctrl temperatures[] = {
             },
         .thermal_zone = "thermal_zone0",
         .temperature  = TEMPERATURE_CPU,
-
-    }};
+    }
+};
 
 static void temperatures_open(int efd)
 {
@@ -460,7 +459,7 @@ struct button_ctrl {
     const enum button_type type;
 };
 
-void button_process(struct ctrl* ctrl)
+static void button_process(struct ctrl* ctrl)
 {
     struct button_ctrl* btn = (struct button_ctrl*)ctrl;
     char buf[10];
@@ -586,7 +585,7 @@ static void mq_process(struct ctrl* ctrl)
             fan_driver_set_freq(freq);
         }
     } else {
-        printf("Not recognized\n");
+        syslog(LOG_ERR, "Msg from message queue not recognized");
     }
 }
 
