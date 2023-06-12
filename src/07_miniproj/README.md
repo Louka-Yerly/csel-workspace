@@ -33,13 +33,12 @@ Tout d'abord, depuis le NanoPi, il faut monter la partition où se trouve le fic
 
 ```
 # mkdir /mnt/boot
-# mount /dev/mmcblk2
-mmcblk2 mmcblk2p1 mmcblk2p2
+# mkdir /mnt/rootfs
 # mount /dev/mmcblk2p1 /mnt/boot
-# mount /dev/mmcblk2p2 /mnt/boot1
+# mount /dev/mmcblk2p2 /mnt/rootfs
 # ls /mnt/boot
 Image boot.cifs boot.scr NanoPi-neo-plus2.dtb uboot.env
-# ls /mnt/boot1
+# ls /mnt/rootfs
 bin etc lib64 lost+found mnt proc run sys usr workspace
 dev lib linuxrc media opt root sbin tmp var
 ```
