@@ -29,7 +29,7 @@ La compilation engendre un fichier `mydt.dtb` qui est le fichier qui sera utilis
 
 
 
-Tout d'abord, depuis le NanoPi, il faut monter la partition où se trouve le fichier `NanoPi-neo-plus2.dtb`. Il est important de noter qu'il y a 2 devices `mmcblk1` et `mmcblk2`. Le premier est la carte SD et le deuxième est la carte eMMC. Il faut donc monter le deuxième device, s'agissant dans notre cas de `mmcblk2`. Le device contient 2 partitions. La première est la partition `boot` et la deuxième est la partition `rootfs`. Il faut donc monter la première partition `boot`.
+Tout d'abord, depuis le NanoPi, il faut monter la partition où se trouve le fichier `nanoPi-neo-plus2.dtb`. Il est important de noter qu'il y a 2 devices `mmcblk1` et `mmcblk2`. Le premier est la eMMC et le deuxième est la carte SD. Il faut donc monter le deuxième device, s'agissant dans notre cas de `mmcblk2`. Le device contient 2 partitions. La première est la partition `boot` et la deuxième est la partition `rootfs`. Il faut donc monter la première partition `boot`.
 
 ```
 # mkdir /mnt/boot
@@ -37,16 +37,16 @@ Tout d'abord, depuis le NanoPi, il faut monter la partition où se trouve le fic
 # mount /dev/mmcblk2p1 /mnt/boot
 # mount /dev/mmcblk2p2 /mnt/rootfs
 # ls /mnt/boot
-Image boot.cifs boot.scr NanoPi-neo-plus2.dtb uboot.env
+Image boot.cifs boot.scr nanoPi-neo-plus2.dtb uboot.env
 # ls /mnt/rootfs
 bin etc lib64 lost+found mnt proc run sys usr workspace
 dev lib linuxrc media opt root sbin tmp var
 ```
 
-Il faut ensuite copier le fichier `mydt.dtb` dans le dossier `/mnt/boot/NanoPi-neo-plus2.dtb` :
+Il faut ensuite copier le fichier `mydt.dtb` dans le dossier `/mnt/boot/nanoPi-neo-plus2.dtb` :
 
 ```
-# cp oled/mydt.dtb /mnt/boot/NanoPi-neo-plus2.dtb
+# cp oled/mydt.dtb /mnt/boot/nanoPi-neo-plus2.dtb
 ```
 
 Ensuite démonter la partition boot :
